@@ -18,8 +18,7 @@ module.exports = {
         },
     },
   output: {
-    filename: 'bundle.js',
-    path: "J:\\web-projects\\matrix-demo-client\\matrix-demo-client\\js\\lib",
+    filename: '../lib/bundle.js'
   },
     plugins: [
         new Dotenv(),
@@ -35,7 +34,7 @@ module.exports = {
         use: {
           loader: 'file-loader',
           options: {
-            publicPath: 'dist/'
+            publicPath: 'lib/'
           }
         }
       },
