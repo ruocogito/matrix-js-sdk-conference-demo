@@ -1,0 +1,52 @@
+<html>
+    <head>
+        <title>VoIP Test</title>
+        <!-- <script type="text/javascript" src="js/lib/olm.js"></script> -->
+        <script type="text/javascript" src="js/lib/bundle.js"></script>
+        <script type="text/javascript" src="js/voip.js"></script>
+    </head>
+
+    <body>
+        You can place and receive calls with this example. Make sure to edit the constants in
+        <code>browserTest.js</code> first.
+        <div id="config"></div>
+        <div id="result"></div>
+        <div>
+            <label for="username">Username: </label>
+            <select id="username" name="username" required>
+                <option value="user">user</option>
+                <option value="user1">user1</option>
+                <option value="mhalane">mhalane</option>
+                <option value="mhalane">registr</option>
+                <option value="mhalane">igrin</option>
+            </select>
+            <button id="connect">Connect</button>
+            <label id="myComboBoxLabel" for="myComboBox" style="display:none">Room: </label>
+            <select id="myComboBox" onchange="comboBoxChanged()" style="display:none">
+            </select>
+        </div>
+        <br>
+        <button id="call">Place Call</button>
+        <button id="answer">Answer Call</button>
+        <button id="hangup">Hangup Call</button>
+        <button id="toggle_camera">Toggle camera</button>
+        <div style="margin-top:5mm;"><button id="join_conference" onclick="onJoinGroupCall()">Join Conference</button><button id="remove_group_call">Remove GroupCall</button></div>
+        <div id="videoBackground" class="video-background">
+        </div>
+    </body>
+</html>
+
+<style>
+    .video-background {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: row;
+        justify-content: start;
+    }
+
+    .video-element {
+        width: 300px;
+        height: 300px;
+    }
+</style>
