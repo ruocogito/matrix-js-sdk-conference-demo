@@ -1,9 +1,23 @@
-const BASE_URL = "https://devmatrix.linkpc.net";
-const USER_ID = "devmatrix.linkpc.net";
 let roomId;
 let groupCall;
 let call;
 let client = null;
+let conferenceCalls = {}
+let deviceId = null
+let webcamComboLabel = null
+let connectBtn = null
+let currentRoom = null;
+let currentUserIdHash = null
+
+let videoElementClassName = "video-element"
+let videoContainerId = "videoBackground"
+let roomsComboBox= null
+
+let CallErrorCode = {
+    UserHangup : "user_hangup",
+    InviteTimeout : "invite_timeout"
+    //other not included
+}
 
 let GroupCallIntent = {
     Ring: "m.ring",
@@ -69,20 +83,21 @@ function accessCamera(func) {
     //try { f(true, false) } catch (e) {}
 }
 
-async function getDeviceId() {
+async function getDevice(id) {
     let devices = await navigator.mediaDevices.enumerateDevices();
-    devices = devices.filter(d => d.deviceId && (d.label.includes("Webcam") || d.label.includes("Virtual Camera") || d.label.includes("VCam")))
+    devices = devices.filter(d => d.deviceId === id)
     return devices.length > 0 ? devices[devices.length - 1] : null
 }
 
-function makeConnect(username) {
+function makeConnect(userId) {
     matrixcs
         .createClient({baseUrl: BASE_URL})
-        .loginWithPassword(username, "1")
+        .loginWithPassword(userId, testPass)
         .then(async (accessDat) => {
             console.log("login success with access token:" + accessDat.access_token);
             accessCamera(async () => {
-                let device = await getDeviceId()
+
+                let device = await getDevice(document.getElementById("webcamCombo").value)
                 console.log("get access to device \"" + device.label + "\" with id:" + device.deviceId)
                 // Reinitialize client with access token.
                 //
@@ -90,7 +105,7 @@ function makeConnect(username) {
                 client = matrixcs.createClient({
                     baseUrl: BASE_URL,
                     accessToken: accessDat.access_token,
-                    userId: "@" + username + ":" + USER_ID,
+                    userId: userId,
                     deviceId: device.deviceId,
                     useE2eForGroupCall: false
                 })
@@ -130,20 +145,17 @@ let onFeedsChanged = function (feeds) {
 
     console.log(`onFeedsChanged: isLocal:${(!!localFeed)}, size:${feeds.length}` )
 
-    if (remoteFeed) {
-        bornVideoComponent(false, remoteFeed.userId).then((remoteElement)=>{
-            remoteElement.srcObject = remoteFeed.stream;
-            remoteElement.play();
-            console.log("Remote stream: "+remoteFeed.stream)
-        })
-    }
-    if (localFeed && localVideoElementsCount() < 1) {
-        bornVideoComponent(true, client.getUserId()).then((localElement)=>{
-            localElement.muted = true;
-            localElement.srcObject = localFeed.stream;
-            localElement.play();
-        })
-    }
+    bornVideoComponent(false, remoteFeed && remoteFeed.userId, remoteFeed, null)
+        .then((remoteElement)=>{
+        if(remoteElement) console.log("Remote stream: "+remoteFeed.stream)
+    })
+        .catch(e=>console.log(`Error during bornVideoComponent: ${e.message}`)).then(()=>{
+        if (localVideoElementsCount() < 1 || remoteFeed) {
+            bornVideoComponent(true, client.getUserId(), localFeed, remoteFeed != null).then((localElement)=>{
+                if(localElement) console.log("Local stream: "+remoteFeed.stream)
+            }).catch(e=>console.log(`Error during bornVideoComponent: ${e.message}`))
+        }
+    })
 }
 
 function isVideoPlaying(videoElement) {
@@ -156,26 +168,46 @@ function getVideoId(isLocal, userId) {
         .then((idSuffix)=>{return `${prefix}-${idSuffix}`})
 }
 
-async function bornVideoComponent(isLocal, userId)  {
+async function bornVideoComponent(isLocal, userId, feed, isExistOponent)  {
+    const videoBackground = document.getElementById(videoContainerId);
+    if(userId == null || feed == null || videoBackground==null) return null
+
+    let elmId = await getVideoId(isLocal, userId);
+
+    let oldElement = videoBackground.querySelector(`video#${elmId}`)
+    console.log(`bornVideoComponent oldElement:${oldElement} isLocal:${isLocal} userId:${userId} ts:${Date.now()}`)
+    if(oldElement != null) {
+        return replaceVideoElementWithNewFeed(oldElement, feed, isExistOponent)
+    }
+
     const videoElement = document.createElement('video');
-    videoElement.className = 'video-element';
-    videoElement.id = await getVideoId(isLocal, userId);
-
-    // Find the element with the ID 'videoBackground'
-    const videoBackground = document.getElementById('videoBackground');
-
-    // Append the new video element to 'videoBackground'
+    videoElement.id = elmId;
+    videoElement.style.display = 'none'
     videoBackground.appendChild(videoElement);
 
-    return videoElement;
+    videoElement.className = videoElementClassName;
+
+    videoElement.srcObject = feed.stream;
+    videoElement.muted = isLocal;
+
+    return videoElement.play().then(()=>{
+        // Append the new video element to 'videoBackground'
+        (new VideoElementsAppender(videoContainerId, videoElementClassName)).placeVideElements()
+        videoElement.style.display = '';
+        return videoElement
+    })
 }
 
 function localVideoElementsCount() {
-    return document.getElementById('videoBackground').querySelectorAll('[id^="local-"]').length
+    return document.getElementById(videoContainerId).querySelectorAll('[id^="local-"]').length
+}
+
+function remoteVideoElementsCount() {
+    return document.getElementById(videoContainerId).querySelectorAll('[id^="remote-"]').length
 }
 
 function removeVideoElement(isLocal, userId) {
-    if(!!isLocal===false || !!userId===false) return
+    if(isLocal==null || !!userId===false) return
 
     return getVideoId(isLocal, userId).then(videoId=>{
         let videoElement = document.getElementById(videoId);
@@ -185,17 +217,43 @@ function removeVideoElement(isLocal, userId) {
                 let parent = videoElement.parentNode
                 if(parent) {
                     videoElement.parentNode.removeChild(videoElement);
-                    if(parent.children.length === 1 && localVideoElementsCount() === 1)
-                        return removeVideoElement(true, client.getUserId())
+                    //if(remoteVideoElementsCount() === 0 && localVideoElementsCount() === 1)
+                    //    return removeVideoElement(true, client.getUserId())
                 }
             };
-            if(isVideoPlaying(videoElement))
-                videoElement.pause().then(() => {
-                    removeFunc()
-                });
+            if(isVideoPlaying(videoElement)) {
+                videoElement.pause()
+                removeFunc()
+            }
             else
                 removeFunc()
         }
+    })
+}
+
+function replaceVideoElementWithNewFeed(element, feed, isExistOponent) {
+    if(element == null) return null
+
+    let newVideoElement = document.createElement('video');
+    //newLocalElement.style.display = "none";
+    if(typeof element.isExistOponent != 'undefined') {
+        newVideoElement.muted = true;
+        newVideoElement.isExistOponent = isExistOponent;
+    }
+
+    newVideoElement.srcObject = feed.stream;
+    newVideoElement.className = element.className
+    return newVideoElement.play().then(()=> {
+        let lid = element.id
+        element.id = null;
+        newVideoElement.id = lid
+        newVideoElement.style.cssText = element.style && element.style.cssText
+        //newVideoElement.style.order = element.style.order
+        element.parentNode.prepend(newVideoElement)
+        //element.parentNode.replaceChildren(element, newVideoElement)
+        element.remove()
+        if(isVideoPlaying(element))
+            element.pause()
     })
 }
 
@@ -203,15 +261,28 @@ function addListeners(call) {
     let lastError = "";
     call.on(CallEvent.Hangup, function () {
 
-        let remoteUserId = call.getOpponentMember() ? call.getOpponentMember().userId : null
-        removeVideoElement(false, remoteUserId)
+        if(call.hangupReason === CallErrorCode.InviteTimeout && currentRoom && getIsConference(currentRoom)) {
+            let aliveCall = Object.values(conferenceCalls).filter(c=>c.feeds.length > 1 && c.feeds.find((feed) => feed.isLocal()))[0]
+
+            const localFeed = aliveCall.feeds.find((feed) => feed.isLocal());
+            if(aliveCall && localFeed)
+                replaceVideoElementWithNewFeed(document.getElementById(videoContainerId).querySelector('[id^="local-"]'), localFeed, true)
+        }
+
+        if((call.hangupReason ===  CallErrorCode.InviteTimeout || call.hangupReason ===  CallErrorCode.UserHangup) && remoteVideoElementsCount() === 0) {
+            removeVideoElement(true, client.getUserId())
+        }
+        else {
+            let remoteUserId = call.getOpponentMember() ? call.getOpponentMember().userId : null
+            removeVideoElement(false, remoteUserId)
+        }
 
         disableButtons(false, true, true);
         document.getElementById("result").innerHTML = "<p>Call ended. Last error: " + lastError + "</p>";
     });
     call.on(CallEvent.Error, function (err) {
         lastError = err.message;
-        call.hangup();
+        call.hangup( CallErrorCode.UserHangup);
         disableButtons(false, true, true);
     });
     call.on(CallEvent.FeedsChanged, onFeedsChanged);
@@ -251,21 +322,74 @@ function addGroupListeners(call) {
         console.log("feeds_changed, size: " + f.length)
         onFeedsChanged(f)
     });
-
 }
 
 window.onload = function () {
+    let userSelector = document.getElementById("username")
+
+    userSelector.innerHTML = "";
+    Object.keys(testUsers).forEach(login=>{
+        let option = document.createElement("option");
+        option.value = testUsers[login];
+        option.text = login;
+        userSelector.appendChild(option);
+    })
+
+    webcamComboLabel = document.getElementById("webcamComboLabel")
+    roomsComboBox = document.getElementById("roomsComboBox");
+    connectBtn = document.getElementById("connectBtn")
+    let makeConfBtn = document.getElementById("make-conference-btn")
     document.getElementById("result").innerHTML = "<p>Press connect to start connecting.</p>";
     disableButtons(true, true, true);
 
-    document.getElementById("connect").onclick = function () {
+    connectBtn.onclick = function () {
         document.getElementById('username').value && makeConnect(document.getElementById('username').value)
         document.getElementById("result").innerHTML = "<p>Please wait. Syncing...</p>";
     };
+
+    makeConfBtn.onclick = ()=> {
+        let num = 1
+
+        while(
+            client.getVisibleRooms()
+                .filter(r=> getIsConference(r) && r.name.endsWith(`-${num}`)).length > 0
+            ) num++
+
+        client.createRoom({room_alias_name:`conference${Math.random() * Math.pow(10,17)}`, visibility:"private", name:`Conferemce-${num}`, preset:"trusted_private_chat", invite:Object.values(testUsers).filter(u=>u!==client.getUserId())})
+    }
+
+    accessCamera(async () => {
+
+        let comboBox = document.getElementById("webcamCombo");
+        comboBox.innerHTML = "";
+        comboBox.style.display = "";
+        webcamComboLabel.style.display = "";
+
+        let defaultDevice1 = null
+        let defaultDevice2 = null;
+
+        (await navigator.mediaDevices.enumerateDevices())
+            .filter(d=>d.deviceId)
+            .forEach(d=> {
+                if(defaultDevice1 == null && isCameraOrWebcamName(d.label))
+                    defaultDevice1 = d.deviceId
+                if(defaultDevice2 == null && d.label.toLowerCase().search("cam")>=0)
+                    defaultDevice2 = d.deviceId
+
+                connectBtn.style.display = ""
+                let option = document.createElement("option");
+                option.value = d.deviceId;
+                option.text = d.label;
+                comboBox.appendChild(option);
+        })
+
+        comboBox.value = defaultDevice1 || defaultDevice2
+        webcamComboChanged()
+    })
 }
 
 let showInfo = function () {
-    let roomName = client.getRoom(roomId).name
+    let roomName = currentRoom.name
 
     document.getElementById("config").innerHTML =
         "<p>" +
@@ -279,7 +403,7 @@ let showInfo = function () {
         "</code><br/>" +
         "</p>";
 
-    document.getElementById("connect").innerHTML = "Connected"
+    connectBtn.innerHTML = "Connected"
 
 };
 
@@ -287,7 +411,12 @@ function startClient() {
     client.on("sync", function (state, prevState, data) {
         switch (state) {
             case "PREPARED":
-                syncComplete();
+                calculateHashSha256(client.getUserId()).then(me=>{
+                    currentUserIdHash = me;
+                    syncComplete();
+                    document.getElementById("webcamCombo").disabled = true
+                    exitAllJoinedConference();
+                }).catch(e=>`Unable to calc userId hash and start client properly!: ${e.message}`)
                 break;
         }
     })
@@ -295,16 +424,81 @@ function startClient() {
     client.startClient();
 }
 
+function exitAllJoinedConference() {
+    return client.getJoinedRooms()
+        .then(p=>
+            Promise.all(p.joined_rooms.map(rid=>
+                client
+                    .getRoom(rid))
+
+                .filter(r=>getIsConference(r) &&
+                    r.currentState.members[client.getUserId()] &&
+                    r.currentState.members[client.getUserId()].membership === "join" &&
+                    roomsComboBox.value !== r.roomId
+                )
+                .map(r=>{
+                    try {
+                        client.leave(r.roomId)
+                    } catch (e) {
+                        console.log(`Error while ${r.name}.leave():${e.message}`)
+                    }
+                }))
+        )
+}
+
+function getIsConference(room) {
+    if(!!room === false) return false
+    let alias = null
+    try {
+        alias = room.getCanonicalAlias()
+    } catch (e) {
+        console.log(`Error while ${room.name}.getCanonicalAlias(): ${e.message}`)
+    }
+    return !!alias === true && alias!==null && alias.indexOf("conference") -1 >= -1
+}
+
 function syncComplete() {
 
     client.on("RoomMember.membership", function (event, member) {
         let isOurUser = member.userId === client.getUserId()
         let isJoin = member.membership === "join"
-       // if(member.membership !== "leave" && !isJoin || !member.roomId) return
-        if (member.membership === "invite" && isOurUser) {
+        let room = client.getRoom(member.roomId)
+        let isConference = getIsConference(room)
+
+        // if(member.membership !== "leave" && !isJoin || !member.roomId) return
+        if (member.membership === "invite" && isOurUser && !isConference) {
             client.joinRoom(member.roomId).then(function () {
                 console.log("Auto-joined %s", member.roomId);
             });
+        }
+
+        if(isJoin && isConference) {
+            //leave all other conferences
+            if(isOurUser) {
+                client.getJoinedRooms().then(r=>{r.joined_rooms.forEach(jroomId=>{
+                    let jroom = client.getRoom(jroomId)
+                    if(jroomId !== member.roomId && getIsConference(jroom)) {
+                        client.leave(jroomId)
+                    }
+                })})
+
+                let placeCalls = () => {placeConferenceCalls(room.getJoinedMembers().map(m=>m.userId), member.roomId)}
+                if(roomId !== member.roomId && getIsConference(currentRoom)) {
+                    destroyConferenceUI(roomId).then(placeCalls)
+                } else {
+                    placeCalls()
+                }
+            } else {
+                placeConferenceCalls([member.userId], member.roomId)
+            }
+        }
+
+        if(member.membership === "leave" && isOurUser && isConference) {
+            destroyConferenceUI(roomId)
+        }
+
+        if(member.membership === "leave" && !isOurUser && isConference /*&& client.getUserId()===currentRoom.getCreator()*/ && member.roomId === roomId) {
+            inviteLeavedUser(()=>member.roomId, member.userId)
         }
 
        // oncorlineMatrix.updateRoomServerEvent(member.roomId, isOurUser, isJoin)
@@ -318,22 +512,21 @@ function syncComplete() {
     });
 
 
-    client.getJoinedRooms().then((obj) => {
-        let comboBox = document.getElementById("myComboBox");
-        comboBox.style.display = ""
-        document.getElementById("myComboBoxLabel").style.display = ""
-        // Clear existing options
-        comboBox.innerHTML = "";
+    let comboBox = roomsComboBox;
+    comboBox.style.display = ""
+    document.getElementById("myComboBoxLabel").style.display = ""
+    // Clear existing options
+    comboBox.innerHTML = "";
 
-        obj.joined_rooms.forEach(roomId1 => {
-
-            let option = document.createElement("option");
-            option.value = roomId1;
-            option.text = client.getRoom(roomId1).name;
-            comboBox.appendChild(option);
-        })
-        obj && obj.joined_rooms.length > 0 && comboBoxChanged();
-    });
+    client.getVisibleRooms()
+        .filter(r=>r.getJoinedMemberCount()>0)
+        .forEach(room => {
+        let option = document.createElement("option");
+        option.value = room.roomId;
+        option.text = room.name;
+        comboBox.appendChild(option);
+    })
+    client.getVisibleRooms().length > 0 && comboBoxChanged();
 
     let rooms = client.getRooms();
     rooms.forEach(room => {
@@ -365,13 +558,20 @@ function syncComplete() {
         if(call) {
             console.log("Hanging up call...");
             console.log("Call => %s", call);
-            call.hangup();
+            call.hangup( CallErrorCode.UserHangup);
         }
 
-        if(groupCall && groupCall.state === 'entered') {
-            console.log("Hanging up groupCall...");
-            console.log("groupCall => %s", call);
-            groupCall.leave();
+        if(Object.values(conferenceCalls).filter(v=>!!v===true).length > 0) {
+            destroyConferenceUI(roomId)
+            //on next room
+            let other = client.getVisibleRooms()
+                .filter(room=> room.roomId !== roomId)
+            let comboBox = roomsComboBox
+            if(comboBox && other.length > 0) {
+                comboBox.value = other[0].roomId
+                comboBoxChanged()
+            }
+
             disableButtons(false, true, true);
         }
 
@@ -386,7 +586,7 @@ function syncComplete() {
         document.getElementById("result").innerHTML = "<p>Answered call.</p>";
     };
 
-    document.getElementById("remove_group_call").onclick = async function () {
+   /* document.getElementById("remove_group_call").onclick = async function () {
         if(groupCall === null) return;
         groupCall.leave()
         await sleep(300)
@@ -396,10 +596,23 @@ function syncComplete() {
         await sleep(300)
         groupCall = client.getGroupCallForRoom(roomId);
         showInfo();
-    };
+    };*/
 
     client.on("Call.incoming", function (c) {
-        console.log("Call ringing");
+        if(/*c.invitee &&
+            c.invitee === client.getUserId() &&*/
+            !client.getUserId().includes("user1") &&
+            c.getOpponentMember() && c.getOpponentMember().userId &&
+            c.roomId &&
+            getIsConference(client.getRoom(c.roomId)) &&
+                roomId === c.roomId
+        ) {
+            conferenceCalls[c.getOpponentMember().userId] = c
+            addListeners(c);
+            sleep(getRandomInt(50,130)).then(()=>c.answer())
+            return
+        }
+        console.log(`Call ringing from ${c.getOpponentMember().userId}`);
         disableButtons(true, false, false);
         document.getElementById("result").innerHTML = "<p>Incoming call...</p>";
         call = c;
@@ -413,7 +626,11 @@ function syncComplete() {
 
     client.on("User.currentlyActive", (u,b)=>{
         //console.log("User.currentlyActive: u ") //+ inspect(u)
-        console.log("User.currentlyActive: b " + b && b.userId ? b.userId : "" ) //inspect(b)
+        if(b.userId && getIsConference(currentRoom) && currentRoom.currentState.members[b.userId] &&
+            currentRoom.currentState.members[b.userId].membership === "leave")
+            inviteLeavedUser(()=>roomId, b.userId)
+
+        console.log(`User.currentlyActive: ${(b && b.userId) ? b.userId : ""} `) //inspect(b)
     })
 
     client.on("GroupCall.incoming", (c)=>{
@@ -436,8 +653,8 @@ function syncComplete() {
         console.log("GroupCall.participants")
     });
 
-    client.on("received_voip_event", (x,y,z)=>{
-        console.log(`received_voip_event: ${x} ${y} ${z}`)
+    client.on("received_voip_event", (x)=>{
+        //console.log(`received_voip_event: ${x.event.type}`)
     });
 
     client.on("toDeviceEvent", (x,y,z)=>{
@@ -445,17 +662,139 @@ function syncComplete() {
     });
 }
 
+function inviteLeavedUser(roomIdGetter, userId) {
+    return sleep(getRandomInt(50,150)).then(()=>{
+        if(roomIdGetter() === roomId && currentRoom.currentState.members[userId].membership === "leave")
+            client.invite(roomIdGetter(), userId)
+    })
+}
+
+function isFirstHexHigher(hex1, hex2) {
+    // Convert hex strings to integers
+    const num1 = parseInt(hex1, 16);
+    const num2 = parseInt(hex2, 16);
+
+    // Compare the integers
+    return num1 > num2;
+}
+
+function invokeIfCurrentUserMustCall(otherUserId, func) {
+            if(otherUserId !== client.getUserId())
+                return calculateHashSha256(otherUserId).then(other=>{
+                    if(isFirstHexHigher(currentUserIdHash, other)) {
+                        func()
+                    }
+                })
+            else return new Promise((r, reject)=>{reject("Same user, reject call attempt")})
+}
+
+function placeConferenceCalls(userIdList, roomId) {
+       userIdList.forEach(userId=>{
+           invokeIfCurrentUserMustCall(userId, ()=>{placeConferenceCall(userId, roomId)})
+       })
+}
+
+function placeConferenceCall(userId, roomId, waitIndex) {
+
+    //if exists room
+    let room = client.getRoom(roomId)
+    if(!!room === false) return
+
+
+    let getIsUserOffline = () => room.getJoinedMembers()
+        .filter(m=> m.userId &&
+            m.userId === userId &&
+            m.user &&
+            m.user.presence !== "offline"
+        ).length === 0
+    //if user joined
+    if(getIsUserOffline())
+        return
+
+    waitIndex = waitIndex || 0
+    let sleepOrder = [1, 3, 5, 10]
+    let sleepLimit = sleepOrder[waitIndex]
+    if(sleepLimit == null) return;
+    sleepLimit *= 1000
+    let actualSleep = getRandomInt(sleepLimit > 1000 ? sleepLimit - 1000 : 100 ,sleepLimit)
+    sleep(actualSleep).then(()=> {
+        //check is answer already
+        if(room.timeline
+            .filter(x=>x.event.type === "m.call.answer" &&
+                x.event.sender === userId && Date.now() - x.localTimestamp < 3000).length > 0 ||
+
+        conferenceCalls[userId] && conferenceCalls[userId].state === 'connected' ||
+            getIsUserOffline()) {
+            return
+        }
+        //Destroy old call
+        destroyCall(conferenceCalls[userId])
+        //create new
+        console.log(`placeConferenceCall: userId:${userId}, room:${room.name}, actualSleep: ${actualSleep}`)
+        let options = {invitee:userId}
+        conferenceCalls[userId] = matrixcs.createNewMatrixCall(client, roomId, options);
+        addListeners(conferenceCalls[userId]);
+        conferenceCalls[userId].placeVideoCall();
+        //try again if fail now
+        placeConferenceCall(userId, roomId, ++waitIndex)
+    })
+}
+
+function destroyCall(targetCall) {
+    if(!!targetCall===false) return
+    try {
+        if(targetCall.state !== 'connected') {
+            call.off(CallEvent.Hangup);
+            call.off(CallEvent.Error);
+            call.off(CallEvent.FeedsChanged);
+        }
+        targetCall.hangup( CallErrorCode.InviteTimeout);
+    } catch (e) {
+        console.log("Error hangup lost call:"+e.message)
+    }
+}
+
+function destroyConferenceUI(roomId) {
+
+    let room = client.getRoom(roomId)
+    if(!!room === false || false === getIsConference(room)) return new Promise(()=>false)
+
+    return Promise.all(room.getJoinedMembers()
+        .map(m=>m.userId)
+        .map(yaId=>{
+            return Promise.all([
+            //stop all streams
+            removeVideoElement(client.getUserId()===yaId, yaId),
+            //destroy all calls
+                new Promise(()=> {
+                    if (conferenceCalls[yaId])
+                        destroyCall(conferenceCalls[yaId])
+                    conferenceCalls[yaId] = null
+                })])
+        })).then(()=>{
+            if(room.selfMembership==='join')
+                client.leave(roomId)
+    })
+}
+
 function comboBoxChanged() {
-    let comboBox = document.getElementById("myComboBox");
-    let selectedRoomId = comboBox.value;
-
-    //console.log("Selected room ID:", selectedRoomId);
-
-    roomId = selectedRoomId;
+    if(getIsConference(currentRoom) && roomsComboBox.value !== roomId)
+        client.leave(roomId)
+    roomId = roomsComboBox.value;
+    currentRoom = client.getRoom(roomId)
     groupCall = client.getGroupCallForRoom(roomId);
+
+    if(currentRoom && currentRoom.selfMembership!=="join")
+        sleep(50).then(()=>client.joinRoom(roomId))
     disableButtons(!!groupCall===true, true, true);
 
     showInfo();
+}
+
+function webcamComboChanged() {
+    let comboBox = document.getElementById("webcamCombo");
+    if(comboBox.value)
+        deviceId = comboBox.value
 }
 
 window.comboBoxChanged = comboBoxChanged
@@ -547,4 +886,21 @@ function createGroupCall(rId) {
             });
         });
     }
+}
+
+function currentMembers() {
+    console.log(`currentMembers of ${currentRoom.name}`)
+    return currentRoom.currentState.members
+}
+
+let isCameraOrWebcamName = function (text) {
+    // Regular expression to match 'camera' or 'webcam' at the start of the string or after a space
+    // and not after an open brace '{'
+    const regex = /^(camera|webcam)|(?<!\(.*)\b( camera| webcam)\b/gi;
+
+    // Search for the pattern in the text
+    const matches = text.match(regex);
+
+    // Return the matches
+    return (matches || []).length > 0;
 }
