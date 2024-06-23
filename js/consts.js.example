@@ -2,7 +2,6 @@
 * Define there your server access constants
 */
 const BASE_URL = "https://devmatrix.linkpc.net";
-const USER_ID = "devmatrix.linkpc.net";
 const testPass = "some-pass-123"
 
 const testUsers = {

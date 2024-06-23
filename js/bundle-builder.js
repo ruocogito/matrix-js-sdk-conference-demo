@@ -1,6 +1,9 @@
 //global.matrixSdkCrypto = await import("@matrix-org/matrix-sdk-crypto-wasm");
+//hex calc
 global.crypto2 = require('crypto');
+//for crypto support
 global.Olm = require('@matrix-org/olm');
+
 // const path = require('path');
 //const olm = require('olm');
 //global.Olm = olm;
@@ -10,11 +13,16 @@ global.Olm = require('@matrix-org/olm');
 
 import * as sdk from "matrix-js-sdk";
 
+//export let getMatrixSdk = () => {
+//	return matrixcs;
+//}
+
 // Enable encryption by importing and initializing libolm
 
-const util = require('util');
+//Debug
+//const util = require('util');
 
-global.inspect = util.inspect
+//global.inspect = util.inspect
 
 
 

@@ -1,29 +1,26 @@
 <html>
     <head>
         <title>VoIP Test</title>
-        <!-- <script type="text/javascript" src="js/lib/olm.js"></script> -->
-        <script type="text/javascript" src="js/lib/bundle.js"></script>
-        <script type="text/javascript" src="js/consts.js"></script>
-        <script type="text/javascript" src="js/VideoElementsAppender.js"></script>
-        <script type="text/javascript" src="js/voip.js"></script>
+        <script type="module" src="js/matrix-conference.js"></script>
     </head>
 
     <body>
-        You can place and receive calls with this example. Make sure to edit the constants in
-        <code>browserTest.js</code> first.
+        You can enjoin matrix video conference with this example. Make sure to edit the constants in
+        <code>consts.js</code> first.
         <div id="config"></div>
-        <div id="result"></div>
+        <label for="notesContainer">Notes and Errors: </label>
+        <div id="notesContainer"></div>
         <div>
-            <label for="username">Username: </label>
-            <select id="username" name="username" required>
+            <label for="userIdCombo">User: </label>
+            <select id="userIdCombo" required>
             </select>
-            <button id="connectBtn" style="display:none">Connect</button>
-            <label id="myComboBoxLabel" for="roomsComboBox" style="display:none">Room: </label>
-            <select id="roomsComboBox" onchange="comboBoxChanged()" style="display:none">
+            <button id="connectBtn" disabled>Connect</button>
+            <label id="roomsComboBoxLabel" for="roomsComboBox" style="display:none">Room: </label>
+            <select id="roomsComboBox" style="display:none">
             </select>
         </div><div class="webcam-container">
             <label id="webcamComboLabel" for="webcamCombo" style="display:none">Webcam: </label>
-            <select id="webcamCombo" onchange="webcamComboChanged()" style="display:none"></select>
+            <select id="webcamCombo" style="display:none"></select>
         </div>
         <button id="call">Place Call</button>
         <button id="answer">Answer Call</button>
@@ -45,13 +42,19 @@
         justify-content: start;
     }
 
-    .video-element {
-        width: 300px;
-        height: 300px;
-    }
-
     .webcam-container {
         margin-top: 10px;
         margin-bottom: 10px;
+    }
+
+    div#notesContainer {
+        background-color: #e0e0e0; /* Light grey background */
+        border: 1px solid #bebebe; /* Slightly darker border */
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3); /* Inset shadow for depth */
+        padding: 10px;
+        transition: box-shadow 0.3s ease;
+        overflow: auto; /* Adds scrollbar if content overflows */
+        max-height: 200px; /* Maximum height before showing scrollbar */
+        max-width: 740px;
     }
 </style>
