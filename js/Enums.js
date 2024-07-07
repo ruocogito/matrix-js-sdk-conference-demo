@@ -53,3 +53,36 @@ export let LogLevel = {
     SILENT: 5,
 }
 
+export let EventType = {
+    MESSAGE: 'm.room.message',
+    CREATE: 'm.room.create'
+}
+
+export let JoinRule = {
+    PUBLIC: 'public',
+    INVITE: 'invite'
+}
+
+export let RoomEvent = {
+    Membership: "RoomMember.membership",
+    Timeline: "Room.timeline",
+    CallIncoming: "Call.incoming",
+    UserPresence: "User.presence",
+    UserCurrentlyActive: "User.currentlyActive",
+    ReceivedVoipEvent: "received_voip_event"
+}
+
+export let MessageType = {
+    text: "m.text"
+}
+
+export const maxUpdateMessageListAttempts = 5
+export const daysToScrollbackInRoomHistory = 7
+export const defaultMaxWhiteUntilCondition = 3000
+
+export const backgroundColors = [
+    [{r:83, g:29, b:138}, {r:66, g:192, b:179}],
+    [{r:52, g:52, b:169}, {r:147, g:61, b:246}],
+    [{r:100, g:30, b:107}, {r:91, g:150, b:182}]
+    [{r:98, g:17, b:31}, {r:98, g:70, b:11}]
+]

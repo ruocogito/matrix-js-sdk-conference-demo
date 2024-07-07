@@ -1,39 +1,71 @@
 <html>
     <head>
-        <title>VoIP Test</title>
-        <script type="module" src="js/matrix-conference.js"></script>
+        <title>Matrix commutation video conference demo</title>
+        <script type="module" src="/js/matrix-conference.js"></script>
     </head>
 
-    <body>
-        You can enjoin matrix video conference with this example. Make sure to edit the constants in
-        <code>consts.js</code> first.
-        <div id="config"></div>
-        <label for="notesContainer">Notes and Errors: </label>
-        <div id="notesContainer"></div>
-        <div>
-            <label for="userIdCombo">User: </label>
-            <select id="userIdCombo" required>
-            </select>
-            <button id="connectBtn" disabled>Connect</button>
-            <label id="roomsComboBoxLabel" for="roomsComboBox" style="display:none">Room: </label>
-            <select id="roomsComboBox" style="display:none">
-            </select>
-        </div><div class="webcam-container">
-            <label id="webcamComboLabel" for="webcamCombo" style="display:none">Webcam: </label>
-            <select id="webcamCombo" style="display:none"></select>
+    <body id="ourBody">
+    <div class="topPanel">
+        <div class="v userPreferenceContainer">
+            <span class="cursiveLabel">User/Connection Options</span>
+        <div id="userPreference">
+            <input type="text"  id="userId-field" />
+            <div class="h" style="display:none"><span id="userNameLabel" style="order:1"></span><span id="userName" style="order:2"></span></div>
+            <select id="userIdCombo" required></select>
+            <label for="userIdCombo">User</label>
+
+            <input type="text" id="server-field">
+            <label for="server-field">Matrix server</label>
+
+            <select id="webcamCombo" style="display:none" required></select>
+            <label id="webcamComboLabel" for="webcamCombo" style="display:none">Webcam</label>
+
+            <button id="connectBtn" disabled>Login</button>
+
+            <label for="notesContainer">Notes and Errors: </label>
+            <div id="notesContainer"></div>
+
+            <span id="hidebtn"></span>
+        </div></div>
+    </div>
+
+    <div id="clientContent" class="h" style="display:none">
+        <div id="roomsViewContainer" class="v">
+            <div id="roomsBlock" class="v">
+                <select id="roomsComboBox">
+                </select>
+                <label class="mark" id="roomsComboBoxLabel" for="roomsComboBox"></label>
+                <label class="mark" id="roomsMembersLabel" for="roomMembersContainer"></label>
+                <div id="roomMembersContainer"></div>
+            </div>
         </div>
-        <button id="call">Place Call</button>
-        <button id="answer">Answer Call</button>
-        <button id="hangup">Hangup Call</button>
-        <button id="toggle_camera">Toggle camera</button>
-        <div style="margin-top:5mm;"><button id="join_conference" onclick="onJoinGroupCall()">Join Conference</button>
-            <button id="make-conference-btn">Make conference</button></div>
-        <div id="videoBackground" class="video-background">
+
+        <div class="v" id="messageContainer">
+            <div class="v" id="messageList"></div>
+            <div class="h messageInputContainer">
+                <input type="text" id="messageInputField" />
+            </div>
         </div>
+
+        <div id="controls" class="v">
+            <button id="call">Place Call</button>
+            <button id="answer">Answer Call</button>
+            <button id="hangup">Hangup Call</button>
+            <button id="toggle-camera-btn">Toggle camera</button>
+            <button id="make-conference-btn">Make conference</button>
+        </div>
+    </div>
+
+
+        <div id="videoBackground" class="video-background"></div>
     </body>
 </html>
 
 <style>
+    body {
+        background: radial-gradient(ellipse at center, #624611, #42c0b3);
+    }
+
     .video-background {
         width: 100%;
         height: 100%;
@@ -57,4 +89,209 @@
         max-height: 200px; /* Maximum height before showing scrollbar */
         max-width: 740px;
     }
+
+    span#userName {
+        text-decoration: underline;
+        font-weight: 750;
+        display: flex;
+        cursor: pointer;
+    }
+
+    div.topPanel {
+        display: flex;
+        flex-direction: row;
+        justify-content: end;
+    }
+
+    span.cursiveLabel {
+        font-size: 9pt;
+        font-family: emoji;
+        font-style: italic;
+    }
+
+    div.userPreferenceContainer {
+        width: 40%;
+        min-width: 311px;
+        justify-content:start;
+        align-content: center;
+        padding: 7px;
+    }
+
+    div.topPanel div#userPreference {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content:start;
+        align-content: center;
+        border: 1px solid black;
+    }
+
+    div.topPanel div#userPreference span#userName {
+
+    }
+
+    div.topPanel div#userPreference button#connectBtn {
+        width: 75px;
+        align-self: center;
+    }
+
+    div.h {
+        display: flex;
+        flex-direction: row;
+    }
+
+    div.v {
+        display: flex;
+        flex-direction: column;
+    }
+
+    div.b {
+        border: 1px solid black;
+    }
+
+    div.topPanel label {
+        font-size: small;
+    }
+
+    span#hidebtn {
+        font-size: 14pt;
+        align-self: end;
+        cursor: pointer;
+    }
+
+    div#roomsBlock {
+        min-width: 300px;
+        width: 20%;
+    }
+
+    label#roomsComboBoxLabel {
+        padding-bottom: 5px;
+    }
+
+    label#roomsMembersLabel {
+
+    }
+
+    div#roomMembersContainer {
+        border: 1px solid #85cae3; /* Slightly darker border */
+        box-shadow: inset 0 2px 4px rgba(74, 4, 121, 0.26); /* Inset shadow for depth */
+        transition: box-shadow 0.3s ease;
+    }
+
+    div#roomMembersContainer div div.roomMemberTextNode {
+        width: 85%;
+    }
+
+    div#roomMembersContainer div div.roomMemberCircleDiv {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-left: 10px;
+    }
+
+    .redBackground {
+        background-color: red;
+    }
+
+    .greenBackground {
+        background-color: green;
+    }
+
+    div#messageContainer {
+       /* width: 70%;
+        min-width: 800px;*/
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-bottom: 10px;
+        min-height: 131px;
+        max-height: 800px;
+        width: 70%;
+        min-width: 800px;
+        max-width: 1200px;
+    }
+
+    div#messageList {
+        background-color: #67676954; /* Light grey background */
+        border: 1px solid #495c63; /* Slightly darker border */
+        box-shadow: inset 0 2px 4px rgba(74, 4, 121, 0.26); /* Inset shadow for depth */
+       /* padding: 10px;*/
+        transition: box-shadow 0.3s ease;
+        overflow: auto; /* Adds scrollbar if content overflows */
+        width: 100%;
+        height: 100%;
+        /*
+        max-height: 200px;
+        max-width: 740px;
+        */
+    }
+
+    div#messageContainer div.messageInputContainer {
+        width: 100%;
+    }
+
+    div#messageContainer div.messageInputContainer input#messageInputField {
+        width: 100%;
+    }
+
+    div#messageList div.newDay {
+        color: #C3AFCA;
+        font-size: 10pt;
+        text-align: center;
+    }
+
+    div#messageList div.messageContentThey {
+        width: 100%;
+        align-items: start;
+    }
+
+    div#messageList div.messageContentWe {
+        width: 100%;
+        align-items: end;
+    }
+
+    div#messageList div.messageContentThey div.messageBody,
+    div#messageList div.messageContentWe div.messageBody {
+        /*width: 100%;*/
+    }
+
+    div#messageList div.messageContentThey div.messageBody div.messageAuthor,
+    div#messageList div.messageContentWe div.messageBody div.messageAuthor {
+        min-width: 70px;
+        height: 100%;
+        align-content: space-around;
+        color: blue;
+        font-size: 10pt;
+    }
+
+    div#messageList div.messageContentThey div.messageBody div.messageText,
+    div#messageList div.messageContentWe div.messageBody div.messageText {
+        font-size: 14pt;
+        color: #327171;
+    }
+
+    div#messageList div.messageContentThey div.messageTime,
+    div#messageList div.messageContentWe div.messageTime {
+        font-size: 10pt;
+        color: #C3AFCA;
+       /* align-self: start;*/
+    }
+
+    div#controls {
+        width: 10%;
+        min-width: 120px;
+        max-width: 196px;
+    }
+
+    div#clientContent {
+        padding-top: 15px;
+        overflow: unset;
+        flex-wrap: wrap;
+    }
+
+    label.mark {
+        font-size: 9pt;
+        font-style: oblique;
+    }
+
 </style>

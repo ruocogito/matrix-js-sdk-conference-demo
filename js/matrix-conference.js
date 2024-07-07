@@ -1,11 +1,30 @@
 import "/js/lib/bundle.js";
 import * as utils from "/js/Utils.js";
 import * as ui from "/js/ui.js";
-import {CallErrorCode, CallEvent, LogLevel} from "/js/Enums.js"
+import {
+    CallErrorCode,
+    CallEvent,
+    LogLevel,
+    RoomEvent,
+    MessageType,
+    EventType,
+    maxUpdateMessageListAttempts,
+    daysToScrollbackInRoomHistory,
+    JoinRule
+} from "/js/Enums.js"
 import {testUsers, testPass, BASE_URL} from "/js/consts.js";
 import {StorageInfo} from "/js/StorageInfo.js";
-import {showError, showNote} from "/js/ui.js";
-import {streamInfo} from "/js/Utils.js";
+import {
+    addMessageToList,
+    clearMessageList, disableClientContentDisplaying, selectedRoomId,
+    showError,
+    showNote, fToggleCameraBtn, toggleCurrentRoomUi, toggleMakeConfBtn,
+    toggleUserPreference,
+    updateRoomMembersContainer
+} from "/js/ui.js";
+import {sleepRandom, streamInfo} from "/js/Utils.js";
+
+export let actualServerURL = null
 
 export let roomId;
 export let currentRoom = null;
@@ -22,7 +41,12 @@ export let storageInfo = new StorageInfo()
 
 let currentLogLevel = LogLevel.ERROR
 
-export let ifServerAliveThen = () => fetch(`${BASE_URL}/_matrix/client/versions`)
+let getActualServerURL = () => {
+    actualServerURL = actualServerURL || ui.getServerFieldValue() || BASE_URL;
+    return actualServerURL
+}
+
+export let ifServerAliveThen = () => fetch(`${getActualServerURL()}/_matrix/client/versions`)
     .then(response => {
         if (!response.ok) {
             throw new Error('Network response was not ok ' + response.statusText);
@@ -41,7 +65,7 @@ export function loginWithToken(accessToken) {
     const whoAmIUrl = '/_matrix/client/v3/account/whoami';
 
     // Use the Fetch API to make a GET request to the Matrix server with the access token
-    return fetch(`${BASE_URL}${whoAmIUrl}`, {
+    return fetch(`${actualServerURL}${whoAmIUrl}`, {
         headers: {
             'Authorization': `Bearer ${accessToken}`
         }
@@ -78,7 +102,7 @@ export function makeConnect(userId, token) {
             ui.accessCamera(async () => {
 
                 client = matrixcs.createClient({
-                    baseUrl: BASE_URL,
+                    baseUrl: actualServerURL,
                     accessToken: accessDat.access_token,
                     userId: userId,
                     deviceId: device.deviceId,
@@ -96,6 +120,7 @@ export function makeConnect(userId, token) {
                 //console.log('Olm initialized for encryption.');
 
                 startClient()
+                ui.toggleUserPreference()
                 //})})
 
             });
@@ -116,7 +141,7 @@ export function makeConnect(userId, token) {
                     ui.showError(e.message);
                 }) || loginWithPass(authClient))(
                     storageInfo.token,
-                    matrixcs.createClient({baseUrl: BASE_URL})
+                    matrixcs.createClient({baseUrl: actualServerURL})
                 );
     })
         .then(()=>{ ui.setIsCanConnect(false)})
@@ -127,10 +152,12 @@ function startClient() {
     client.on("sync", function (state, prevState, data) {
         switch (state) {
             case "PREPARED":
-                utils.calculateHashSha256(client.getUserId()).then(me=>{
+                utils.calculateHashSha256(client.getUserId()).then(me => {
+                    ui.setLoginButtonText("Relogin")
                     client.logger.setLevel(currentLogLevel)
                     currentUserIdHash = me;
                     currentUserId = client.getUserId()
+                    ui.setUserName(client.getUser(currentUserId).displayName)
                     syncComplete();
                     ui.setIsCanSelectWebCam(true)
                     exitAllJoinedConference();
@@ -144,7 +171,7 @@ function startClient() {
 
 function syncComplete() {
 
-    client.on("RoomMember.membership", function (event, member) {
+    client.on(RoomEvent.Membership, function (event, member) {
         let isOurUser = member.userId === client.getUserId()
         let isJoin = member.membership === "join"
         let room = client.getRoom(member.roomId)
@@ -179,7 +206,7 @@ function syncComplete() {
         }
 
         if(member.membership === "leave" && isOurUser && isConference) {
-            destroyConferenceUI(roomId)
+            destroyConferenceUI(member.roomId)
         }
 
         if(member.membership === "leave" && !isOurUser && isConference /*&& client.getUserId()===currentRoom.getCreator()*/ && member.roomId === roomId) {
@@ -197,15 +224,17 @@ function syncComplete() {
     });
 
     //fill room's selection
-    ui.enableRoomSelectionDisplaying()
+    ui.enableClientContentDisplaying()
+    ui.toggleCurrentRoomUi(true)
 
     ui.clearRoomsInSelection()
 
+    ui.addRoomForSelection("", "--- none ---")
     client.getVisibleRooms()
         .filter(r=>r.getJoinedMemberCount()>0)
         .forEach(room => ui.addRoomForSelection(room.roomId, room.name) )
 
-    client.getVisibleRooms().length > 0 && onChangeSelectRoom();
+    ui.selectAnyRoom()
 
     ui.showNote("Ready for calls.")
     ui.disableButtons(false, true, true);
@@ -224,7 +253,7 @@ function syncComplete() {
          showInfo();
      };*/
 
-    client.on("Call.incoming", function (c) {
+    client.on(RoomEvent.CallIncoming, function (c) {
         if(/*c.invitee &&
             c.invitee === client.getUserId() &&*/
             !client.getUserId().includes("user1") &&
@@ -236,21 +265,22 @@ function syncComplete() {
             conferenceCalls[c.getOpponentMember().userId] = c
             addCallListeners(c);
             utils.sleepRandom(50,130).then(()=>c.answer())
+            ui.disableButtons(true, true, false);
             return
         }
         console.log(`Call ringing from ${c.getOpponentMember().userId}`);
-        disableButtons(true, false, false);
+        ui.disableButtons(true, false, false);
         showNote("Incoming call...")
         call = c;
         addCallListeners(call);
     });
 
-    client.on("User.presence", (u,b)=>{
+    client.on(RoomEvent.UserPresence, (u,b)=>{
         //console.log("User.presence: u"+ inspect(u))
         //console.log("User.presence: b"+ inspect(b))
     })
 
-    client.on("User.currentlyActive", (u,b)=>{
+    client.on(RoomEvent.UserCurrentlyActive, (u,b)=>{
         //console.log("User.currentlyActive: u ") //+ inspect(u)
         if(b.userId && getIsConference(currentRoom) && currentRoom.currentState.members[b.userId] &&
             currentRoom.currentState.members[b.userId].membership === "leave")
@@ -259,20 +289,41 @@ function syncComplete() {
         console.log(`User.currentlyActive: ${(b && b.userId) ? b.userId : ""} `) //inspect(b)
     })
 
-    client.on("received_voip_event", (x)=>{
+    client.on(RoomEvent.ReceivedVoipEvent, (x)=>{
         //console.log(`received_voip_event: ${x.event.type}`)
     });
+
+    client.on(RoomEvent.Timeline, (e)=>{
+        //console.log(`${RoomEvent.Timeline}: ${inspect(e)} `)
+        if(Date.now() - e.localTimestamp >= 3000 ||
+            e.event == null || e.event.room_id == null || e.event.room_id !== roomId) return
+        addMessageToList(e)
+    })
 }
 
 //Buttons events
 
 export let onUserWantConnect = () => {
+    disableClientContentDisplaying()
     ui.selectedUserId() && makeConnect(ui.selectedUserId())
     ui.showNote("Please wait. Syncing...")
 }
 
-export let onToggleCamera = function () {
+function toggleLocalFeed(call) {
     call.getLocalFeeds().find((feed) => feed.isLocal()).stream.getVideoTracks().map(x => x.enabled = !x.enabled)
+}
+
+export let onToggleCamera = function () {
+    if(currentRoom == null) return
+    if(!getIsConference(currentRoom))
+        toggleLocalFeed(call)
+    else {
+        Object.keys(conferenceCalls).forEach(yaUser => {
+            let confCall = conferenceCalls[yaUser]
+            if(confCall)
+                toggleLocalFeed(confCall)
+        })
+    }
 }
 
 export let onMakeConference = ()=> {
@@ -313,7 +364,7 @@ export let onUserHangup = function () {
     if(call) {
         console.log("Hanging up call...");
         console.log("Call => %s", call);
-        call.hangup( CallErrorCode.UserHangup);
+        call.hangup(CallErrorCode.UserHangup);
     }
 
     if(Object.values(conferenceCalls).filter(v=>!!v===true).length > 0) {
@@ -321,7 +372,7 @@ export let onUserHangup = function () {
         //on next room
         ui.selectOtherRoom()
 
-        ui.disableButtons(false, true, true);
+        ui.disableButtons(true, true, true);
     }
 
     ui.showNote("Hangup call.")
@@ -340,14 +391,87 @@ export let onAnswer = function () {
 export function onChangeSelectRoom() {
     if(getIsConference(currentRoom) && ui.selectedRoomId() !== roomId)
         client.leave(roomId)
-    roomId = ui.selectedRoomId()
-    currentRoom = client.getRoom(roomId)
 
-    if(currentRoom && currentRoom.selfMembership!=="join")
-        utils.sleep(50).then(()=>client.joinRoom(roomId))
-    ui.disableButtons(!!groupCall===true, true, true);
+    let selectedRoom = ui.selectedRoomId() && client.getRoom(ui.selectedRoomId())
+    if(!!selectedRoom === false) {
+        toggleCurrentRoomUi(true)
+        roomId = null
+        currentRoom = null
+        return;
+    }
 
-    ui.showInfo();
+    let resolveSelectAction = () => {
+
+        roomId = selectedRoom.roomId
+        currentRoom = selectedRoom
+
+        updateRoomMembersContainer()
+        updateMessageList()
+        leavedConferenceInviteThinker(roomId)
+
+        ui.disableButtons(!getIsConference(currentRoom), true, false);
+        ui.toggleMakeConfBtn(getIsConference(currentRoom))
+
+        toggleCurrentRoomUi(false)
+    }
+
+    if(selectedRoom.selfMembership==="join") {
+        resolveSelectAction()
+        return;
+    }
+
+    utils.waitUntil( () =>
+        selectedRoom.selfMembership !=="join" && selectedRoom.getJoinRule() !== JoinRule.PUBLIC &&
+        (selectedRoom.getJoinRule() === JoinRule.INVITE && selectedRoom.selfMembership === 'invite')
+    ).then(()=>{
+        client.joinRoom(selectedRoom.roomId)
+            .then(resolveSelectAction)
+    }).catch(e=>{
+        showError(`Unable join room ${selectedRoom.name}: ${e.message}`)
+        ui.toggleCurrentRoomUi(true)
+    })
+}
+
+function loadMessagesFromPastDays(room, daysToScrollback, earliestEventTimestamp = new Date().getTime()) {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() - daysToScrollback);
+
+    // Check if the earliest event is older than the target date
+    if (earliestEventTimestamp > targetDate.getTime() && room.timeline.find(e=>e.event.type === EventType.CREATE) === null) {
+        return client.scrollback(room, 100).then((room) => {
+            // Update the earliest event timestamp with the oldest event in the timeline
+            const timeline = room.timeline;
+            earliestEventTimestamp = timeline[timeline.length - 1].getTs();
+
+            // Recursively load more messages if needed
+            return loadMessagesFromPastDays(room, daysToScrollback, earliestEventTimestamp);
+        })
+    }
+    // We have reached the messages from the specified number of days ago
+    //console.log(`Loaded messages from the past ${daysToScrollback} days`);
+    return new Promise((t,c)=>t(room))
+}
+
+let updateMessageList = (numAttempt) => {
+    ui.clearMessageList()
+    if(currentRoom == null) return
+    if(numAttempt == null) {
+        numAttempt = 0
+    }
+    if(numAttempt >= maxUpdateMessageListAttempts) {
+        showError(`The maxUpdateMessageListAttempts passed, cannot update room ${currentRoom.name}`)
+    }
+
+    if(currentRoom.selfMembership!=="join") {
+        sleepRandom(10, 60).then(()=>updateMessageList(++numAttempt))
+        return;
+    }
+
+    loadMessagesFromPastDays(currentRoom, daysToScrollbackInRoomHistory).then((room) => {
+        room.timeline.forEach(e => {
+            addMessageToList(e)
+        })
+    })
 }
 
 export function onWebcamComboChanged() {
@@ -382,17 +506,24 @@ let onFeedsChangedEvent = function (feeds) {
 
     console.log(`onFeedsChanged: isLocal:${(!!localFeed)}, size:${feeds.length}` )
 
-    ui.videoElementsAppender.bornVideoComponent(false, remoteFeed && remoteFeed.userId, remoteFeed, null)
+    ui.videoElementsAppender
+        .bornVideoComponent(false, remoteFeed && remoteFeed.userId, remoteFeed, null)
         .then((remoteElement)=>{
-        if(remoteElement) console.log(streamInfo("Remote", remoteFeed.stream))
-
+            if(remoteElement) console.log(streamInfo("Remote", remoteFeed.stream))
     })
-        .catch(e=>console.log(`Error during bornVideoComponent: ${e.message}`)).then(()=>{
-        if (ui.videoElementsAppender.localVideoElementsCount() < 1 || remoteFeed) {
-            ui.videoElementsAppender.bornVideoComponent(true, client.getUserId(), localFeed, remoteFeed != null).then((localElement)=>{
-                if(localElement) console.log(streamInfo("Local", remoteFeed.stream))
-            }).catch(e=>console.log(`Error during bornVideoComponent: ${e.message}`))
-        }
+        .catch(e=>console.log(`Error during bornVideoComponent: ${e.message}`))
+        .then(()=>{
+            if (ui.videoElementsAppender.localVideoElementsCount() < 1 || remoteFeed) {
+                ui.videoElementsAppender
+                    .bornVideoComponent(true, client.getUserId(), localFeed, remoteFeed != null)
+                    .then((localElement)=>{
+                        if(localElement) {
+                            console.log(streamInfo("Local", remoteFeed.stream))
+                            ui.fToggleCameraBtn(false)
+                        }
+                })
+                    .catch(e=>console.log(`Error during bornVideoComponent: ${e.message}`))
+            }
     })
 }
 
@@ -459,10 +590,22 @@ function getIsConference(room) {
 }
 
 function inviteLeavedUser(roomIdGetter, userId) {
-    return utils.sleepRandom(50,150).then(()=>{
+    return utils.sleepRandom(20,70).then(()=>{
         if(roomIdGetter() === roomId && currentRoom.currentState.members[userId].membership === "leave")
             client.invite(roomIdGetter(), userId)
     })
+}
+
+function leavedConferenceInviteThinker(roomId) {
+    if(currentRoom.roomId !== roomId)
+    if(currentRoom == null) return
+    if(getIsConference(currentRoom) === false) return
+
+    Object.keys(currentRoom.currentState.members).forEach(yaId => {
+        if(currentRoom.currentState.members[yaId].membership === "leave" && yaId !== currentUserId)
+            inviteLeavedUser( ()=>currentRoom, yaId)
+    })
+    sleepRandom(1500, 2000).then(()=>leavedConferenceInviteThinker(roomId))
 }
 
 function invokeIfCurrentUserMustCall(otherUserId, func) {
@@ -486,6 +629,8 @@ function placeConferenceCall(userId, roomId, waitIndex) {
     //if exists room
     let room = client.getRoom(roomId)
     if(!!room === false) return
+    if(room.selfMembership!=='join') return
+    if(currentRoom.roomId !== roomId) return
 
     let getIsUserOffline = () => room.getJoinedMembers()
         .filter(m=> m.userId &&
@@ -534,23 +679,28 @@ function destroyCall(targetCall) {
             call.off(CallEvent.Error);
             call.off(CallEvent.FeedsChanged);
         }
-        targetCall.hangup( CallErrorCode.InviteTimeout);
+        targetCall.hangup( CallErrorCode.InviteTimeout );
     } catch (e) {
-        console.log("Error hangup lost call:"+e.message)
+        console.log("Error hangup lost call:" + e.message)
     }
 }
 
 function destroyConferenceUI(roomId) {
 
+    ui.fToggleCameraBtn(true)
+
     let room = client.getRoom(roomId)
     if(!!room === false || false === getIsConference(room)) return new Promise(()=>false)
 
-    return Promise.all(room.getJoinedMembers()
+    let members = room.getJoinedMembers()
+    members.push(client.getUser(currentUserId))
+
+    return Promise.all(members
         .map(m=>m.userId)
         .map(yaId=>{
             return Promise.all([
                 //stop all streams
-                ui.videoElementsAppender.removeVideoElement(client.getUserId()===yaId, yaId),
+                ui.videoElementsAppender.removeVideoElement(currentUserId === yaId, yaId),
                 //destroy all calls
                 new Promise(()=> {
                     if (conferenceCalls[yaId])
@@ -569,8 +719,48 @@ window.project_debug = ()=> {return {
         return currentRoom.currentState.members
     },
 
-    client: client
+    client: client,
+
+    currentRoom: currentRoom,
+
+    conferenceCalls:conferenceCalls
 }}
+
+export let isCurrentMatrixConnectionActive = () => {
+    try {
+        return !!client && client.getVisibleRooms() != null
+    } catch (e) {
+        return false
+    }
+}
+
+export let getUserName = (userId) => client && client.getUser(userId) && client.getUser(userId).displayName || ''
+
+export let getUser = (userId) => client && client.getUser(userId)
+
+let sendMessage = (messageText) => {
+    const content = {
+        body: messageText,
+        msgtype: MessageType.text
+    };
+
+    client.sendEvent(roomId, EventType.MESSAGE, content, "", (err, res) => {
+        if (err) {
+            showError(err)
+        } else {
+            //console.log("Message sent successfully", res);
+        }
+    });
+
+}
+
+export function onMessageInput(e) {
+    if (e.key === 'Enter' && e.currentTarget.value) {
+        sendMessage(e.currentTarget.value)
+        e.currentTarget.value = ""
+    }
+}
+
 
 
 

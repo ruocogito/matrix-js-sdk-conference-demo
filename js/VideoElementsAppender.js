@@ -148,12 +148,9 @@ export class VideoElementsAppender {
             //    return removeVideoElement(true, client.getUserId())
           }
         };
-        if(this.isVideoPlaying(videoElement)) {
+        if(this.isVideoPlaying(videoElement))
           videoElement.pause()
-          removeFunc()
-        }
-        else
-          removeFunc()
+        removeFunc()
       }
     })
   }

@@ -20,9 +20,9 @@ import * as sdk from "matrix-js-sdk";
 // Enable encryption by importing and initializing libolm
 
 //Debug
-//const util = require('util');
+const util = require('util');
 
-//global.inspect = util.inspect
+global.inspect = util.inspect
 
 
 

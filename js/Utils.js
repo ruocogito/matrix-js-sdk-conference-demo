@@ -1,3 +1,4 @@
+import {defaultMaxWhiteUntilCondition} from "/js/Enums.js";
 
 export function getCurrentTimeString() {
         const now = new Date();
@@ -39,8 +40,28 @@ export async function sleep(ms) {
         return (new Promise(resolve => setTimeout(resolve, ms)));
 }
 
+export async function waitUntil(untilGetter, sleepDeltaMax = 60, maxWhiteUntilCondition = defaultMaxWhiteUntilCondition) {
+        let startWaiting = Date.now()
+        while(untilGetter() === false) {
+                if(Date.now() - startWaiting <= maxWhiteUntilCondition)
+                        throw new Error(`waitUntil timeout ${maxWhiteUntilCondition}`)
+                await sleepRandom(10, sleepDeltaMax)
+        }
+        return true
+}
+
 export function getRandomInt(min, max) {
         return Math.floor(Math.random() * (max - min)) + min;
+}
+
+export function getRandomString(length) {
+        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
+        let result = '';
+        const charactersLength = characters.length;
+        for (let i = 0; i < length; i++) {
+                result += characters.charAt(Math.floor(Math.random() * charactersLength));
+        }
+        return result;
 }
 
 export function isFirstHexHigher(hex1, hex2) {
