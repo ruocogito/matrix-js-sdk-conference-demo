@@ -49,6 +49,7 @@ let messageInputField = null
 let messageContainer = null
 let clientContent = null
 let controlsContainer = null
+let userPass = null
 
 export let videoElementsAppender = null
 
@@ -78,6 +79,7 @@ let initElementsVars = () => new Promise((resolve, reject) => {
     messageContainer = document.getElementById("messageContainer")
     clientContent = document.getElementById("clientContent")
     controlsContainer = document.getElementById("controls")
+    userPass = document.getElementById("user-pass")
 
     videoElementsAppender = new VideoElementsAppender(videoContainer, videoElementClassName);
 
@@ -524,7 +526,7 @@ function rgbToHex(r, g, b) {
 }
 
 function startBackgroundGradient() {
-    return
+    //return
     let randomIndex = getRandomInt(0, backgroundColors.length) % backgroundColors.length
     let colors = [backgroundColors[randomIndex][0], backgroundColors[randomIndex][1]]
 
@@ -544,7 +546,7 @@ function startBackgroundGradient() {
                 delta < 0 && colors[workColorIndex][workColor] > 120)) {
 
             colors[workColorIndex][workColor] += delta
-            i++
+
         } else if(colors[workColorIndex][workColor]>=255 && delta > 0 ||
             colors[workColorIndex][workColor] <= 120 && delta < 0 ||
             (i > 48 && getRandomInt(0,3) === 1)) {
@@ -556,6 +558,7 @@ function startBackgroundGradient() {
             i = 0
         }
 
+        i++
         let color1 = rgbToHex(  colors[0].r , colors[0].g, colors[0].b);
         let color2 = rgbToHex(  colors[1].r , colors[1].g, colors[1].b);
 
@@ -564,4 +567,6 @@ function startBackgroundGradient() {
     }, 41.67); // Change every 1/24 second
 }
 
-
+export function getEnteredPass() {
+    return userPass.value
+}

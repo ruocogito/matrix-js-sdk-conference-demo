@@ -25,6 +25,7 @@ import {
 import {sleepRandom, streamInfo} from "/js/Utils.js";
 
 export let actualServerURL = null
+export let actualPass = testPass;
 
 export let roomId;
 export let currentRoom = null;
@@ -129,7 +130,7 @@ export function makeConnect(userId, token) {
 
         let loginWithPass = (authClient) => {
             return token == null && authClient
-                .loginWithPassword(userId, testPass)
+                .loginWithPassword(userId, testPass || ui.getEnteredPass() )
                 .then(onSuccess)
                 .catch(e=>{ui.showError(e.message);return false})
         }
@@ -335,8 +336,20 @@ export let onMakeConference = ()=> {
         ) num++
     let conferenceName = `Conferemce-${num}`
 
+    let usersToInvite = (()=>{
+        if(actualServerURL !== BASE_URL)
+            return client.getUsers().map(u=>u.userId)
+        return Object.values(testUsers).filter(u=>u!==client.getUserId())
+    })()
+
     client
-        .createRoom({room_alias_name:`conference${Math.random() * Math.pow(10,17)}`, visibility:"private", name:conferenceName, preset:"trusted_private_chat", invite:Object.values(testUsers).filter(u=>u!==client.getUserId())})
+        .createRoom({
+            room_alias_name:`conference${Math.random() * Math.pow(10,17)}${utils.getRandomString(5)}`,
+            visibility:"private",
+            name:conferenceName,
+            preset:"trusted_private_chat",
+            invite:usersToInvite
+        })
         .then(roomId => {
             ui.addRoomForSelection(roomId, conferenceName)
             ui.setSelectedRoom(roomId)
